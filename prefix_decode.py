@@ -164,6 +164,7 @@ class PrefixDecoder:
         given `question`, retrieve the related high quality knowledge from knowledge document
         '''
         ret = []
+        question = question.strip() + ' '
         outputs = self._get_combined_embedding(question)
         selected_prefixes = self._get_topk_prefixes([(outputs, 0, [])], top_k=top_k)
         prompt_toks = [int(i) for i in self.inputs.input_ids[0]]
