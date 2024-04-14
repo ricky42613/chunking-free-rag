@@ -22,6 +22,14 @@ high_quality_knowledge = prefix_decoder.retrieve_knowledge(question, top_k=2)
 -  Parameters
     -  question: question input by user
     -  top_k: Retrieve passage in `top_k` highest prefix score
+### Testing Script
+- Jupyter Note book: `main.ipynb`
+- Python Script: `python main.py`
+    - After `Input question:` is printed, you can input your question.
+<img width="1036" alt="Screenshot 2024-04-14 at 9 57 03 PM" src="https://github.com/ricky42613/chunking-free-rag/assets/49410953/71d50c2f-d978-4d28-b0e7-3c66ce4444c5">
+
+
+
 ## Result (distance = 200)
 ### Test 1
 > Question: What\'s the most significant news related to cybersecurity in this week?
