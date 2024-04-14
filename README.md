@@ -31,3 +31,7 @@ high_quality_knowledge = prefix_decoder.retrieve_knowledge(question, top_k=2)
 > Question: What did Red Hat announce?
 > 
 > Red Hat also announced a related vulnerability, CVE-2024--3094, with several news articles related to this incident. Fortunately, this hidden backdoor was discovered early, and currently, only some Linux versions are affected, with the impact not being too widespread. However, this supply chain attack targeting open-source software is still under investigation and discussion. Not only the accidental discovery process but also the method of implanting the backdoor has surprised various sectors. The GitHub account involved in this incident had been created in 2021 and 2022, gradually gaining the trust of the original XZ maintainers. This infiltration process has attracted significant attention and has once again sparked discussions on the security of open-source software.
+## Some Problem
+- 論文中好像沒有說明sentence prefix是指句子的前幾個token，因此，這次實作以句子前3個字作為prefix
+- 如果top-k sample decode選擇的解碼路徑都不是sentence prefix，最終就會沒有合法的selected prefix可以去生成high knowledge passage
+   - 例如：sentence prefix有[[This, is, a], [I, have, the], [Here, are, some]]，如果在predict第一個token時，top-3 sample到的是[some, a, the]，那最終預測出的sentence prefix就沒辦法match到knowledge中的任何一個句子。
