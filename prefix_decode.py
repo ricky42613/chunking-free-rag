@@ -25,12 +25,18 @@ class PrefixDecoder:
         self._build_prefix_trie()
 
     def _precompute(self):
+        '''
+        Precompute embedding of given knowledge
+        '''
         self.inputs = self.tokenizer(self.prompt_without_question, return_tensors="pt")
         outputs = self.model.model(**self.inputs, return_dict=True)
         self.knowledge_logits = self.model.lm_head(outputs.last_hidden_state)
         self.past_key_values = outputs.past_key_values
 
     def _build_prefix_trie(self):
+        '''
+        Get prefix tokens from all sentences in given knowledge
+        '''
         self.id2token = {v:k for k,v in self.tokenizer.get_vocab().items()}
         self.all_prefix = set()
         self.prefix2sents = {}
@@ -49,6 +55,9 @@ class PrefixDecoder:
         return prompt
     
     def _prefix_match_sents(self, toks):
+        '''
+        Given `toks`, a list of token id, check if it is one of the sentences' prefix
+        '''
         ptr = self.prefix2sents
         for t in toks:
             if t not in ptr:
@@ -57,6 +66,9 @@ class PrefixDecoder:
         return ptr['sents']
 
     def _predict_next_token(self, hidden_state):
+        '''
+        Given `hidden_state`, the last hidden state from LLM model, predict next token
+        '''
         logits = self.model.lm_head(hidden_state)
         logits = logits.float()
         next_token_logits = logits[:, -1, :]
@@ -64,6 +76,9 @@ class PrefixDecoder:
         return next_token_probs
 
     def _get_combined_embedding(self, question):
+        '''
+        Given `question`, generate the embedding for full prompt including template, knowledge, and question
+        '''
         input_tokens = self.tokenizer(question, return_tensors="pt").input_ids[0]
         past_key_values = self.past_key_values
         for i in range(1, len(input_tokens)):
@@ -74,16 +89,20 @@ class PrefixDecoder:
             past_key_values = ouputs.past_key_values
         return ouputs
 
-    def _get_topk_prefixes(self, current_status, top_k = 2):
+    def _get_topk_prefixes(self, current_status, top_k=2, max_q=5):
+        '''
+        (Constrained Sentence Prefix Decoding)
+        Given `question`, generate the embedding for full prompt including template, knowledge, and question
+        '''
         ret = []
         status = current_status
-        for _ in tqdm(range(5)):
+        for _ in tqdm(range(max_q)):
             next_status = []
             for output, score, prev_toks in status:
                 last_hidden_state = output.last_hidden_state
                 next_token_probs = self._predict_next_token(last_hidden_state)
                 top_k_candidates = []
-                for id in self.all_prefix:
+                for id in self.all_prefix: # find top k tokens from all prefix
                     if len(top_k_candidates) >= top_k:
                         if top_k_candidates[0][0] < next_token_probs[0][id]:
                             heapq.heappop(top_k_candidates)
@@ -105,9 +124,14 @@ class PrefixDecoder:
                         next_status.append((new_ouput, new_score, new_prev_toks))
                 status = next_status
         ret.sort(key=lambda item: item['score'], reverse=True)
-        return ret
-
-    def find_beg_of_seq(self, promptToks, prefixToks):
+        return ret[:top_k]
+    
+    def _find_beg_of_seq(self, promptToks, prefixToks):
+        '''
+        promptToks: tokens of prompt
+        prefixToks: tokens of selected prefix
+        return the index of the selected prefix in promptToks
+        '''
         prefix_len = len(prefixToks)
         prefix_str = ''.join([self.id2token[id_].replace('▁', ' ') for id_ in prefixToks])
         for i in range(len(promptToks)):
@@ -116,7 +140,13 @@ class PrefixDecoder:
                 return i
         return -1
 
-    def find_end_of_seq(self, beg_idx, logits, end_of_sent='</s>', distance=200):
+    def _find_end_of_seq(self, beg_idx, logits, end_of_sent='</s>', distance=200):
+        '''
+        (Skip Decoding)
+        beg_idx: begin index of selected prefix 
+        logits: model output of prompt
+        return the postion that have highest probability of </s> in specific distance
+        '''
         len_of_prompt = len(self.inputs.input_ids[0])
         end_of_sent_id = self.tokenizer.get_vocab()[end_of_sent]
         max_score = float('-inf')
@@ -129,14 +159,17 @@ class PrefixDecoder:
         return max_idx
 
 
-    def retrieve_knowledge(self, question):
+    def retrieve_knowledge(self, question, top_k=2):
+        '''
+        given `question`, retrieve the related high quality knowledge from knowledge document
+        '''
         ret = []
         outputs = self._get_combined_embedding(question)
-        selected_prefixes = self._get_topk_prefixes([(outputs, 0, [])])
+        selected_prefixes = self._get_topk_prefixes([(outputs, 0, [])], top_k=top_k)
         prompt_toks = [int(i) for i in self.inputs.input_ids[0]]
         for cand in selected_prefixes:
-            sent_beg_idx = self.find_beg_of_seq(prompt_toks, cand['toks'])
-            end_idx = self.find_end_of_seq(sent_beg_idx, self.knowledge_logits)
+            sent_beg_idx = self._find_beg_of_seq(prompt_toks, cand['toks'])
+            end_idx = self._find_end_of_seq(sent_beg_idx, self.knowledge_logits)
             high_quality_span = self.inputs.input_ids[0][sent_beg_idx: end_idx]
             high_quality_text = self.tokenizer.batch_decode([high_quality_span], skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
             ret.append(high_quality_text)
